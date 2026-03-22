@@ -8,6 +8,9 @@ export type TaskStatus = "未着手" | "完了";
 
 export type TaskCategory = "就活" | "修論/課題" | "事務" | "遊び";
 
+/** 一覧フィルター用。「すべて」は全カテゴリーを表示 */
+export type FilterCategory = "すべて" | TaskCategory;
+
 export type Task = {
   id: string;
   title: string;
@@ -19,6 +22,8 @@ export type Task = {
 };
 
 const CATEGORIES: TaskCategory[] = ["就活", "修論/課題", "事務", "遊び"];
+
+const FILTER_TABS: FilterCategory[] = ["すべて", ...CATEGORIES];
 
 type EditDraft = {
   title: string;
@@ -200,6 +205,8 @@ export default function Home() {
     id: string;
     draft: EditDraft;
   } | null>(null);
+  const [selectedCategory, setSelectedCategory] =
+    useState<FilterCategory>("すべて");
 
   useEffect(() => {
     const stored = loadFromStorage();
@@ -236,10 +243,14 @@ export default function Home() {
 
   const { incomplete, complete } = useMemo(() => {
     if (!tasks) return { incomplete: [] as Task[], complete: [] as Task[] };
-    const incomplete = tasks.filter((t) => t.status === "未着手");
-    const complete = tasks.filter((t) => t.status === "完了");
+    const inFilter = (t: Task) =>
+      selectedCategory === "すべて" || t.category === selectedCategory;
+    const incomplete = tasks.filter(
+      (t) => t.status === "未着手" && inFilter(t)
+    );
+    const complete = tasks.filter((t) => t.status === "完了" && inFilter(t));
     return { incomplete, complete };
-  }, [tasks]);
+  }, [tasks, selectedCategory]);
 
   const addTask = useCallback(
     (e: React.FormEvent) => {
@@ -460,6 +471,46 @@ export default function Home() {
           </form>
         </section>
 
+        <section
+          aria-labelledby="filter-heading"
+          className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5"
+        >
+          <h2
+            id="filter-heading"
+            className="text-sm font-semibold text-slate-800"
+          >
+            カテゴリーで絞り込み
+          </h2>
+          <div className="mt-3 -mx-1 overflow-x-auto px-1 pb-0.5 [scrollbar-width:thin]">
+            <div
+              role="tablist"
+              aria-label="タスクのカテゴリーフィルター"
+              className="flex flex-nowrap gap-2 sm:flex-wrap sm:gap-2"
+            >
+              {FILTER_TABS.map((tab, index) => {
+                const isActive = selectedCategory === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    id={`filter-tab-${index}`}
+                    onClick={() => setSelectedCategory(tab)}
+                    className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${
+                      isActive
+                        ? "bg-slate-900 text-white shadow-md ring-1 ring-slate-900/20"
+                        : "border border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white hover:text-slate-900"
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
         <div className="grid gap-8 lg:grid-cols-2">
           <section aria-labelledby="incomplete-heading">
             <h2
@@ -474,7 +525,9 @@ export default function Home() {
             </h2>
             {incomplete.length === 0 ? (
               <p className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-4 py-8 text-center text-sm text-slate-500">
-                未着手のタスクはありません
+                {selectedCategory === "すべて"
+                  ? "未着手のタスクはありません"
+                  : `「${selectedCategory}」の未着手タスクはありません`}
               </p>
             ) : (
               <ul className="space-y-3">
@@ -505,7 +558,9 @@ export default function Home() {
             </h2>
             {complete.length === 0 ? (
               <p className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-4 py-8 text-center text-sm text-slate-500">
-                完了したタスクはまだありません
+                {selectedCategory === "すべて"
+                  ? "完了したタスクはまだありません"
+                  : `「${selectedCategory}」の完了タスクはありません`}
               </p>
             ) : (
               <ul className="space-y-3">
