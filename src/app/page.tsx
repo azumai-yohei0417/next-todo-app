@@ -47,6 +47,29 @@ function categoryBadgeClass(category: TaskCategory): string {
   }
 }
 
+function isValidDateString(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function compareIncompleteTasks(a: Task, b: Task): number {
+  if (a.is_priority !== b.is_priority) {
+    return a.is_priority ? -1 : 1;
+  }
+
+  const aHasDeadline = isValidDateString(a.deadline);
+  const bHasDeadline = isValidDateString(b.deadline);
+
+  if (aHasDeadline && bHasDeadline) {
+    return a.deadline.localeCompare(b.deadline);
+  }
+
+  if (aHasDeadline !== bHasDeadline) {
+    return aHasDeadline ? -1 : 1;
+  }
+
+  return 0;
+}
+
 function PencilIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -208,9 +231,9 @@ export default function Home() {
     if (!tasks) return { incomplete: [] as Task[], complete: [] as Task[] };
     const inFilter = (t: Task) =>
       selectedCategory === "すべて" || t.category === selectedCategory;
-    const incomplete = tasks.filter(
-      (t) => t.status === "未着手" && inFilter(t)
-    );
+    const incomplete = tasks
+      .filter((t) => t.status === "未着手" && inFilter(t))
+      .sort(compareIncompleteTasks);
     const complete = tasks.filter((t) => t.status === "完了" && inFilter(t));
     return { incomplete, complete };
   }, [tasks, selectedCategory]);
@@ -226,7 +249,7 @@ export default function Home() {
           .insert({
             title: trimmed,
             category,
-            deadline: deadline.trim(),
+            deadline,
             is_priority: isPriority,
             memo: memo.trim(),
             status: "未着手",
@@ -287,7 +310,7 @@ export default function Home() {
       draft: {
         title: task.title,
         category: task.category,
-        deadline: task.deadline,
+        deadline: task.deadline || "",
         is_priority: task.is_priority ?? false,
         memo: task.memo,
       },
@@ -310,7 +333,7 @@ export default function Home() {
       const updated = {
         title: trimmed,
         category: draft.category,
-        deadline: draft.deadline.trim(),
+        deadline: draft.deadline,
         is_priority: draft.is_priority,
         memo: draft.memo.trim(),
       };
@@ -435,15 +458,14 @@ export default function Home() {
                   htmlFor="task-deadline"
                   className="block text-sm font-medium text-slate-700"
                 >
-                  期限（自由記述）
+                  期限
                 </label>
                 <input
                   id="task-deadline"
-                  type="text"
+                  type="date"
                   value={deadline}
                   onChange={(e) => setDeadline(e.target.value)}
-                  placeholder="例: 3/31 / なるはや / 未定"
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
                 />
               </div>
             </div>
@@ -673,17 +695,16 @@ export default function Home() {
                         htmlFor="edit-task-deadline"
                         className="block text-sm font-medium text-slate-700"
                       >
-                        期限（自由記述）
+                        期限
                       </label>
                       <input
                         id="edit-task-deadline"
-                        type="text"
+                        type="date"
                         value={editModal.draft.deadline}
                         onChange={(e) =>
                           updateEditDraft({ deadline: e.target.value })
                         }
-                        placeholder="例: 3/31 / なるはや"
-                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
                       />
                     </div>
                   </div>
