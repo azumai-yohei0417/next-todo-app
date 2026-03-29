@@ -1,8 +1,7 @@
-"use client";
+'use client';
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-const STORAGE_KEY = "personal-todo-mvp";
+import { supabase } from "../lib/supabase";
 
 export type TaskStatus = "未着手" | "完了";
 
@@ -16,7 +15,7 @@ export type Task = {
   title: string;
   category: TaskCategory;
   deadline: string;
-  isPriority: boolean;
+  is_priority: boolean;
   memo: string;
   status: TaskStatus;
 };
@@ -29,7 +28,7 @@ type EditDraft = {
   title: string;
   category: TaskCategory;
   deadline: string;
-  isPriority: boolean;
+  is_priority: boolean;
   memo: string;
 };
 
@@ -45,50 +44,6 @@ function categoryBadgeClass(category: TaskCategory): string {
       return "bg-emerald-100 text-emerald-900 ring-emerald-200/80";
     default:
       return "bg-slate-100 text-slate-800 ring-slate-200/80";
-  }
-}
-
-function createInitialTasks(): Task[] {
-  return [
-    {
-      id: crypto.randomUUID(),
-      title: "エントリーシートの作成",
-      category: "就活",
-      deadline: "4/30",
-      isPriority: true,
-      memo: "A社とB社のESを完成させる",
-      status: "未着手",
-    },
-    {
-      id: crypto.randomUUID(),
-      title: "研究室のゼミ発表スライド作成",
-      category: "修論/課題",
-      deadline: "来週水曜",
-      isPriority: false,
-      memo: "先行研究のまとめを入れる",
-      status: "未着手",
-    },
-    {
-      id: crypto.randomUUID(),
-      title: "市役所で住民票の取得",
-      category: "事務",
-      deadline: "なるはや",
-      isPriority: true,
-      memo: "マイナンバーカードを持参する",
-      status: "未着手",
-    },
-  ];
-}
-
-function loadFromStorage(): Task[] | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return null;
-    return parsed as Task[];
-  } catch {
-    return null;
   }
 }
 
@@ -123,19 +78,19 @@ function TaskCard({
   onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
 }) {
-  const priorityRing = task.isPriority
+  const priorityRing = task.is_priority
     ? "ring-2 ring-amber-400/90 shadow-md shadow-amber-200/50"
     : "ring-1 ring-slate-200/80";
 
   return (
     <article
       className={`rounded-xl bg-white p-4 transition-shadow ${priorityRing} ${
-        task.isPriority ? "bg-gradient-to-br from-amber-50/80 to-white" : ""
+        task.is_priority ? "bg-gradient-to-br from-amber-50/80 to-white" : ""
       }`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          {task.isPriority && (
+          {task.is_priority && (
             <span
               className="inline-flex shrink-0 items-center justify-center rounded-md bg-amber-400 px-1.5 py-0.5 text-sm text-amber-950 shadow-sm"
               aria-label="優先タスク"
@@ -196,6 +151,7 @@ function TaskCard({
 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<TaskCategory>("就活");
   const [deadline, setDeadline] = useState("");
@@ -209,20 +165,27 @@ export default function Home() {
     useState<FilterCategory>("すべて");
 
   useEffect(() => {
-    const stored = loadFromStorage();
-    if (stored && stored.length > 0) {
-      setTasks(stored);
-    } else {
-      const initial = createInitialTasks();
-      setTasks(initial);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-    }
+    const fetchTasks = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("tasks")
+          .select("*")
+          .order("created_at", { ascending: true });
+        if (error) {
+          console.error("Failed to fetch tasks:", error);
+          setTasks([]);
+          return;
+        }
+        setTasks(data ?? []);
+      } catch (err) {
+        console.error("Unexpected error while fetching tasks:", err);
+        setTasks([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchTasks();
   }, []);
-
-  useEffect(() => {
-    if (tasks === null) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-  }, [tasks]);
 
   useEffect(() => {
     if (!editModal) return;
@@ -253,20 +216,32 @@ export default function Home() {
   }, [tasks, selectedCategory]);
 
   const addTask = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       const trimmed = title.trim();
       if (!trimmed) return;
-      const newTask: Task = {
-        id: crypto.randomUUID(),
-        title: trimmed,
-        category,
-        deadline: deadline.trim(),
-        isPriority,
-        memo: memo.trim(),
-        status: "未着手",
-      };
-      setTasks((prev) => (prev ? [...prev, newTask] : [newTask]));
+      try {
+        const { data, error } = await supabase
+          .from("tasks")
+          .insert({
+            title: trimmed,
+            category,
+            deadline: deadline.trim(),
+            is_priority: isPriority,
+            memo: memo.trim(),
+            status: "未着手",
+          })
+          .select()
+          .single();
+        if (error) {
+          console.error("Failed to insert task:", error);
+          return;
+        }
+        setTasks((prev) => (prev ? [...prev, data as Task] : [data as Task]));
+      } catch (err) {
+        console.error("Unexpected error while inserting task:", err);
+        return;
+      }
       setTitle("");
       setDeadline("");
       setIsPriority(false);
@@ -276,7 +251,7 @@ export default function Home() {
     [title, category, deadline, isPriority, memo]
   );
 
-  const toggleStatus = useCallback((id: string) => {
+  const toggleStatus = useCallback(async (id: string) => {
     setTasks((prev) =>
       prev
         ? prev.map((t) =>
@@ -289,7 +264,22 @@ export default function Home() {
           )
         : prev
     );
-  }, []);
+    const current = tasks?.find((t) => t.id === id);
+    if (!current) return;
+    const nextStatus: TaskStatus =
+      current.status === "未着手" ? "完了" : "未着手";
+    try {
+      const { error } = await supabase
+        .from("tasks")
+        .update({ status: nextStatus })
+        .eq("id", id);
+      if (error) {
+        console.error("Failed to update status:", error);
+      }
+    } catch (err) {
+      console.error("Unexpected error while updating status:", err);
+    }
+  }, [tasks]);
 
   const openEdit = useCallback((task: Task) => {
     setEditModal({
@@ -298,7 +288,7 @@ export default function Home() {
         title: task.title,
         category: task.category,
         deadline: task.deadline,
-        isPriority: task.isPriority,
+        is_priority: task.is_priority ?? false,
         memo: task.memo,
       },
     });
@@ -311,28 +301,42 @@ export default function Home() {
   }, []);
 
   const saveEdit = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       if (!editModal) return;
       const trimmed = editModal.draft.title.trim();
       if (!trimmed) return;
       const { id, draft } = editModal;
+      const updated = {
+        title: trimmed,
+        category: draft.category,
+        deadline: draft.deadline.trim(),
+        is_priority: draft.is_priority,
+        memo: draft.memo.trim(),
+      };
       setTasks((prev) =>
         prev
           ? prev.map((t) =>
               t.id === id
                 ? {
                     ...t,
-                    title: trimmed,
-                    category: draft.category,
-                    deadline: draft.deadline.trim(),
-                    isPriority: draft.isPriority,
-                    memo: draft.memo.trim(),
+                    ...updated,
                   }
                 : t
             )
           : prev
       );
+      try {
+        const { error } = await supabase
+          .from("tasks")
+          .update(updated)
+          .eq("id", id);
+        if (error) {
+          console.error("Failed to update task:", error);
+        }
+      } catch (err) {
+        console.error("Unexpected error while updating task:", err);
+      }
       setEditModal(null);
     },
     [editModal]
@@ -342,12 +346,20 @@ export default function Home() {
     setEditModal(null);
   }, []);
 
-  const deleteTask = useCallback((id: string) => {
+  const deleteTask = useCallback(async (id: string) => {
     setTasks((prev) => (prev ? prev.filter((t) => t.id !== id) : prev));
     setEditModal((m) => (m?.id === id ? null : m));
+    try {
+      const { error } = await supabase.from("tasks").delete().eq("id", id);
+      if (error) {
+        console.error("Failed to delete task:", error);
+      }
+    } catch (err) {
+      console.error("Unexpected error while deleting task:", err);
+    }
   }, []);
 
-  if (tasks === null) {
+  if (isLoading) {
     return (
       <div className="flex min-h-full flex-1 items-center justify-center bg-slate-100/80 px-4 py-16">
         <p className="text-sm font-medium text-slate-600">読み込み中…</p>
@@ -679,9 +691,11 @@ export default function Home() {
                     <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
                       <input
                         type="checkbox"
-                        checked={editModal.draft.isPriority}
+                        checked={editModal.draft.is_priority || false}
                         onChange={(e) =>
-                          updateEditDraft({ isPriority: e.target.checked })
+                          updateEditDraft({
+                            is_priority: e.target.checked,
+                          })
                         }
                         className="size-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500/40"
                       />
